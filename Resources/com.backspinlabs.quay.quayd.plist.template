@@ -3,7 +3,7 @@
 <!--
   Per-user LaunchAgent template for quayd. install-agent.sh substitutes the
   __PLACEHOLDERS__ and writes the result to:
-      ~/Library/LaunchAgents/com.example.quay.quayd.plist
+      ~/Library/LaunchAgents/com.backspinlabs.quay.quayd.plist
 
   This is a LaunchAgent (per-user), NOT a LaunchDaemon (system). Apple's
   `container` service is user-scoped, so quayd must run in the same user session.
@@ -11,7 +11,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.example.quay.quayd</string>
+    <string>com.backspinlabs.quay.quayd</string>
 
     <key>ProgramArguments</key>
     <array>

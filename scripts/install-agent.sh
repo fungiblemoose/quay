@@ -12,7 +12,7 @@
 #
 set -euo pipefail
 
-LABEL="com.example.quay.quayd"
+LABEL="com.backspinlabs.quay.quayd"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/quay"

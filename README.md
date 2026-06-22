@@ -68,7 +68,7 @@ scripts/install-agent.sh --uninstall
 ```
 
 The script builds a release binary into `~/.local/bin/quayd`, templates the
-LaunchAgent into `~/Library/LaunchAgents/com.example.quay.quayd.plist`, and
+LaunchAgent into `~/Library/LaunchAgents/com.backspinlabs.quay.quayd.plist`, and
 `launchctl bootstrap`s it into your GUI session. It is a **per-user
 LaunchAgent**, not a system LaunchDaemon, because Apple's `container` service is
 itself user-scoped — a daemon in a different session couldn't talk to it. Every
@@ -76,7 +76,7 @@ path derives from `$HOME`.
 
 After installing, the script prints an **appliance checklist** (disable sleep,
 auto-restart after power failure, enable auto-login) so the box comes back on its
-own. Placeholder bundle id: `com.example.quay`.
+own. Bundle id: `com.backspinlabs.quay`.
 
 ## Stack schema
 
