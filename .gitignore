@@ -1,0 +1,11 @@
+# Swift / SwiftPM build artifacts
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS cruft
+.DS_Store
+
+# Quay runtime state (never commit live status or logs)
+status.json
+*.log
