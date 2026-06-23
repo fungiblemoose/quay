@@ -72,10 +72,28 @@ sed \
 note "Wrote LaunchAgent -> $PLIST_DST"
 
 # --- (re)bootstrap into the per-user GUI domain ---
+# bootout is asynchronous: if we bootstrap before the old instance has fully
+# torn down, launchctl returns "Input/output error" (errno 5) and leaves the
+# agent UNREGISTERED. So wait for the service to actually disappear, then
+# bootstrap with a short retry to ride out any residual settle time.
 launchctl bootout "$GUI_DOMAIN/$LABEL" 2>/dev/null || true
-launchctl bootstrap "$GUI_DOMAIN" "$PLIST_DST"
+for _ in $(seq 1 50); do
+    launchctl print "$GUI_DOMAIN/$LABEL" >/dev/null 2>&1 || break
+    sleep 0.2
+done
+
+bootstrapped=0
+for attempt in 1 2 3 4 5; do
+    if launchctl bootstrap "$GUI_DOMAIN" "$PLIST_DST" 2>/dev/null; then
+        bootstrapped=1; break
+    fi
+    warn "bootstrap attempt $attempt failed (service still settling) — retrying…"
+    sleep 1
+done
+[ "$bootstrapped" = "1" ] || { warn "could not bootstrap $LABEL; run 'launchctl bootstrap $GUI_DOMAIN $PLIST_DST' manually"; exit 1; }
+
 launchctl enable "$GUI_DOMAIN/$LABEL"
-launchctl kickstart -k "$GUI_DOMAIN/$LABEL"
+launchctl kickstart "$GUI_DOMAIN/$LABEL"
 note "Bootstrapped and started $LABEL"
 
 cat <<'EOF'
