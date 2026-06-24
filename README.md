@@ -151,8 +151,25 @@ The menu bar glyph aggregates everything: **green** = all healthy, **yellow** =
 starting/degraded, **red** = any failed. Each service is listed with its state, a
 health dot, and restart count.
 
-QuayBar is **read-only in v1**. (TODO: route Start/Stop/Restart from the menu bar
-to `quayd` over XPC, so the daemon stays the single writer of container state.)
+Each service also has a **Restart** button (↻). It does *not* start the container
+itself — it `container stop`s the service and lets `quayd` bring it back up on the
+next reconcile tick (≤ the daemon interval). A stop is indistinguishable from a
+crash, which the supervisor already handles, so `quayd` stays the **single writer**
+of start/create state and there's no two-writers race. That's why there is no
+Start/Stop button — only Restart. Useful for a *zombie* hang (process wedged but
+`/health` still answers) that the automatic health check won't catch.
+
+Install it into the menu bar (run in the GUI session you want it in — e.g. over
+Screen Sharing on a headless box):
+
+```sh
+scripts/install-bar.sh              # build, bundle ~/Applications/QuayBar.app, autostart
+scripts/install-bar.sh --uninstall
+```
+
+The installer assembles an `LSUIElement` `.app` (menu-bar-only, no Dock icon) and
+a per-user LaunchAgent. `KeepAlive` fires **only on a crash** (`SuccessfulExit=false`),
+so a clean "Quit QuayBar" stays quit and a startup crash can't tight-loop.
 
 ## Scope
 
@@ -166,7 +183,6 @@ LaunchAgent, and a read-only menu bar. Target service: Open WebUI.
   `53/udp` together.
 - socat LAN bridging, UDP publishing, privileged ports (`<1024`).
 - `dns` health type, docker-compose import, `depends_on` ordering.
-- XPC-driven GUI actions (Start/Stop/Restart from QuayBar).
 - FSEvents watch on the stacks dir (today files are re-read every tick).
 
 ## Architecture
@@ -175,7 +191,7 @@ LaunchAgent, and a read-only menu bar. Target service: Open WebUI.
 |--------|------|----------------|
 | `QuayCore` | library | schema, container client, reconciler, health, backoff, status I/O |
 | `quayd` | executable | headless supervisor loop (runs under the LaunchAgent) |
-| `QuayBar` | executable | SwiftUI menu bar, read-only status |
+| `QuayBar` | executable | SwiftUI menu bar: status + Restart (stop-and-let-quayd-recover) |
 | `QuayCoreTests` | tests | unit tests for the above |
 
 ## License

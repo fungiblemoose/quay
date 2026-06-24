@@ -4,14 +4,15 @@ import QuayCore
 #if os(macOS)
 import SwiftUI
 
-// QuayBar — a read-only MenuBarExtra that reflects quayd's status.json.
+// QuayBar — a MenuBarExtra that reflects quayd's status.json and offers a single
+// safe action: Restart.
 //
-// v1 is strictly read-only. The daemon (quayd) is the single writer of container
-// state; the menu bar only renders the snapshot it publishes.
-//
-// TODO(v2): route Start / Stop / Restart actions from here to quayd over XPC, so
-// the daemon stays the single writer and the GUI never touches containers
-// directly.
+// Reads are a poll of status.json (quayd is the only writer of that file). The
+// Restart button deliberately does NOT create or start containers — it only
+// `container stop`s the service and lets quayd reconcile it back up on its next
+// tick. A stop is indistinguishable from a crash, which the supervisor already
+// handles, so quayd stays the SINGLE WRITER of start/create state and there is no
+// two-writers race. That's the whole reason there's no Start/Stop button here.
 
 @main
 struct QuayBarApp: App {
@@ -27,17 +28,34 @@ struct QuayBarApp: App {
     }
 }
 
+/// Resolve the `container` CLI. A launchd-started GUI app may not inherit a PATH
+/// with /usr/local/bin, so prefer absolute paths and fall back to bare `container`.
+func resolveContainerExecutable() -> String {
+    let candidates = ["/usr/local/bin/container", "/opt/homebrew/bin/container"]
+    for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+        return path
+    }
+    return "container"
+}
+
 /// Polls status.json on a timer. (A v2 could watch the file with FSEvents.)
 @MainActor
 final class StatusModel: ObservableObject {
     @Published var snapshot: StatusSnapshot?
     @Published var loadError: String?
+    /// Container names with an in-flight restart, so the UI can show progress
+    /// and prevent double-taps.
+    @Published var restarting: Set<String> = []
+    /// Last action error, surfaced in the menu until the next successful poll.
+    @Published var actionError: String?
 
     private var timer: Timer?
     private let store = StatusStore()
     private let pollInterval: TimeInterval = 3
+    private let control: ContainerClient
 
-    init() {
+    init(control: ContainerClient = CLIContainerClient(executable: resolveContainerExecutable())) {
+        self.control = control
         reload()
         let t = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
@@ -53,6 +71,25 @@ final class StatusModel: ObservableObject {
         } catch {
             snapshot = nil
             loadError = "No status yet (\(store.url.lastPathComponent)). Is quayd running?"
+        }
+    }
+
+    /// Recycle a service: stop the container and let quayd start it again on its
+    /// next reconcile tick. We never start it ourselves — quayd stays the single
+    /// writer of start/create state.
+    func restart(containerName: String) {
+        guard !restarting.contains(containerName) else { return }
+        restarting.insert(containerName)
+        actionError = nil
+        let control = self.control
+        Task { @MainActor in
+            do {
+                try await control.stop(name: containerName)
+            } catch {
+                actionError = "Restart failed for \(containerName): \(error.localizedDescription)"
+            }
+            restarting.remove(containerName)
+            reload()
         }
     }
 
@@ -96,6 +133,12 @@ struct QuayMenu: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let err = model.actionError {
+                    Divider()
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 Divider()
                 Text("Updated \(snap.generatedAt.formatted(date: .omitted, time: .standard))")
                     .font(.caption2)
@@ -138,6 +181,17 @@ struct QuayMenu: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if model.restarting.contains(svc.containerName) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button {
+                            model.restart(containerName: svc.containerName)
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Restart \(svc.service) — stops it; quayd brings it back up")
+                    }
                 }
             }
         }

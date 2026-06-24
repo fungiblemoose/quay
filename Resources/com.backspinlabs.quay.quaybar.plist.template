@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Per-user LaunchAgent for the QuayBar menu bar app. install-bar.sh substitutes
+  the __PLACEHOLDERS__ and writes the result to:
+      ~/Library/LaunchAgents/com.backspinlabs.quay.quaybar.plist
+
+  It runs in the user's GUI (Aqua) session so the status item appears in the
+  menu bar. KeepAlive relaunches ONLY on a crash (SuccessfulExit=false), so a
+  clean "Quit QuayBar" stays quit and a startup crash can't tight-loop.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.backspinlabs.quay.quaybar</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__APP_BIN__</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__HOME__/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Interactive (not Background) so the GUI app gets normal scheduling. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.config/quay/quaybar.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.config/quay/quaybar.err.log</string>
+</dict>
+</plist>
