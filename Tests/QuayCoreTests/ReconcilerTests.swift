@@ -128,6 +128,37 @@ final class ReconcilerTests: XCTestCase {
         XCTAssertEqual(health.checkCount, 2, "probes again once the interval elapses")
     }
 
+    func testInitialStartIsNotARestart() async {
+        let client = MockContainerClient()
+        client.listResult = [] // missing on first sight
+        let r = makeReconciler(client: client, health: MockHealthChecker(.healthy))
+
+        await r.tick(stacks: [TestFixtures.stack()], now: Date(timeIntervalSince1970: 0))
+
+        let count = await r.restartCount(for: TestFixtures.containerName)
+        XCTAssertEqual(count, 0, "the very first bring-up is not a restart")
+    }
+
+    func testResurrectionAfterRunningCountsAsRestart() async {
+        let client = MockContainerClient()
+        let r = makeReconciler(client: client, health: MockHealthChecker(.healthy))
+        let stack = TestFixtures.stack()
+
+        // Tick 1: container is up and healthy — quayd records it as having run.
+        client.listResult = [ContainerSummary(name: TestFixtures.containerName, state: .running)]
+        await r.tick(stacks: [stack], now: Date(timeIntervalSince1970: 0))
+        var count = await r.restartCount(for: TestFixtures.containerName)
+        XCTAssertEqual(count, 0, "a healthy running container is not a restart")
+
+        // Tick 2: the container has vanished — quayd recreates it. THAT is a restart
+        // (the bug this fixes: resurrections used to not be counted).
+        client.listResult = []
+        await r.tick(stacks: [stack], now: Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(client.runs.count, 1, "quayd recreated the missing container")
+        count = await r.restartCount(for: TestFixtures.containerName)
+        XCTAssertEqual(count, 1, "resurrecting a container that had been up counts as a restart")
+    }
+
     func testOrphanLoggedNotRemoved() async {
         let client = MockContainerClient()
         client.listResult = [

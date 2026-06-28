@@ -43,6 +43,10 @@ public actor Reconciler {
         /// `interval_seconds` instead of probing on every (faster) reconcile tick.
         /// Reset to nil on (re)start so health re-evaluates promptly.
         var lastHealthCheckAt: Date?
+        /// True once quayd has seen this service up at least once. Used so the
+        /// FIRST bring-up isn't counted as a restart, but every later resurrection
+        /// (container found stopped/missing after having been up) is.
+        var hasEverStarted: Bool = false
     }
 
     private func ensureState(_ name: String) -> ServiceRuntimeState {
@@ -222,6 +226,10 @@ public actor Reconciler {
             s.healthDot = .yellow
             s.lastError = nil
             s.lastHealthCheckAt = nil // re-probe health promptly after a (re)start
+            // The first successful bring-up is the initial start; any later one is
+            // a resurrection of a service that had been up — count it as a restart.
+            if s.hasEverStarted { s.restartCount += 1 }
+            s.hasEverStarted = true
             logger.info("\(create ? "created+started" : "started") \(spec.name) (attempt \(s.backoff.attempts))")
         } catch {
             s.lastError = "\(error)"
@@ -234,6 +242,11 @@ public actor Reconciler {
     /// Health-evaluate a running container and restart it if it's been failing.
     private func evaluateRunning(service: Service, containerName: String,
                                  state s: inout ServiceRuntimeState, now: Date) async {
+        // We're here only because the container is running, so we've now observed
+        // it up — a later disappearance counts as a restart even if quayd never
+        // issued the original start (e.g. it adopted an already-running container).
+        s.hasEverStarted = true
+
         // Throttle probes to the service's configured interval. Reconcile ticks
         // are typically faster (default 15s) than a health interval (default 30s);
         // without this we'd probe every tick and reach `failures_to_restart`
@@ -301,11 +314,14 @@ public actor Reconciler {
             return
         }
         s.backoff.recordAttempt(now: now)
-        s.restartCount += 1
         s.consecutiveHealthFailures = 0
         do {
             try await client.stop(name: containerName)
             try await client.start(name: containerName)
+            // Count only once the restart actually succeeded, so a failed restart
+            // doesn't pre-count and then get double-counted by the resurrection
+            // path on a later tick.
+            s.restartCount += 1
             s.runState = .starting
             s.healthDot = .yellow
             s.lastHealthCheckAt = nil // re-probe health promptly after a restart
